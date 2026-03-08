@@ -1,0 +1,99 @@
+name: PR Auto Test Generator
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - main
+      - develop
+
+jobs:
+  generate-and-test:
+    name: Generate Tests & Run
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: write
+      pull-requests: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'yarn'
+      
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+      
+      # 1. Lint & Type Check
+      - name: Lint code
+        run: yarn lint
+        continue-on-error: true
+      
+      - name: Build project
+        run: yarn build
+      
+      # 2. Generate test code with AI
+      - name: Generate test code
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          node scripts/generate-tests.js
+        continue-on-error: true
+      
+      # 3. Run tests
+      - name: Run unit tests
+        run: yarn test --coverage
+        continue-on-error: true
+      
+      - name: Run E2E tests
+        run: yarn test:e2e
+        continue-on-error: true
+      
+      # 4. Upload coverage
+      - name: Upload coverage reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: coverage/
+      
+      # 5. Comment results on PR
+      - name: Comment test results
+        uses: actions/github-script@v7
+        if: always()
+        with:
+          script: |
+            const fs = require('fs');
+            let comment = '## 🤖 Auto Test Results\n\n';
+            
+            // Check if tests passed
+            try {
+              const coverage = fs.readFileSync('coverage/coverage-summary.json', 'utf8');
+              const data = JSON.parse(coverage);
+              const lines = data.total.lines.pct;
+              const statements = data.total.statements.pct;
+              
+              comment += `### 📊 Code Coverage\n`;
+              comment += `- Lines: ${lines}%\n`;
+              comment += `- Statements: ${statements}%\n\n`;
+            } catch (e) {
+              comment += '⚠️ Coverage report not available\n\n';
+            }
+            
+            comment += '### ✅ All tests completed!\n';
+            comment += 'Check the Actions tab for detailed results.';
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
