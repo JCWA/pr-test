@@ -1,4 +1,4 @@
-name: PR Auto Test Generator
+name: PR Auto Review & Test
 
 on:
   pull_request:
@@ -8,8 +8,8 @@ on:
       - develop
 
 jobs:
-  generate-and-test:
-    name: Generate Tests & Run
+  ai-review-and-test:
+    name: AI Review & Test
     runs-on: ubuntu-latest
     
     permissions:
@@ -22,6 +22,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.ref }}
           token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
       
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -32,32 +33,50 @@ jobs:
       - name: Install dependencies
         run: yarn install --frozen-lockfile
       
-      # 1. Lint & Type Check
+      # 1. Lint & Build
       - name: Lint code
+        id: lint
         run: yarn lint
         continue-on-error: true
       
       - name: Build project
+        id: build
         run: yarn build
+        continue-on-error: true
       
-      # 2. Generate test code with AI
+      # 2. AI Code Review
+      - name: AI Code Review
+        id: code-review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          node scripts/ai-code-review.js
+        continue-on-error: true
+      
+      # 3. Generate test code
       - name: Generate test code
+        id: generate-tests
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           node scripts/generate-tests.js
         continue-on-error: true
       
-      # 3. Run tests
+      # 4. Run tests
       - name: Run unit tests
+        id: unit-tests
         run: yarn test --coverage
         continue-on-error: true
       
       - name: Run E2E tests
+        id: e2e-tests
         run: yarn test:e2e
         continue-on-error: true
       
-      # 4. Upload coverage
+      # 5. Upload coverage
       - name: Upload coverage reports
         uses: actions/upload-artifact@v4
         if: always()
@@ -65,35 +84,45 @@ jobs:
           name: coverage-report
           path: coverage/
       
-      # 5. Comment results on PR
-      - name: Comment test results
+      # 6. Final summary comment
+      - name: Post summary to PR
         uses: actions/github-script@v7
         if: always()
         with:
           script: |
             const fs = require('fs');
-            let comment = '## 🤖 Auto Test Results\n\n';
+            let summary = '# 🤖 Automated PR Review Summary\n\n';
             
-            // Check if tests passed
+            // Build status
+            summary += '## 🏗️ Build & Lint\n';
+            summary += '- Lint: ${{ steps.lint.outcome }}\n';
+            summary += '- Build: ${{ steps.build.outcome }}\n\n';
+            
+            // Coverage
+            summary += '## 📊 Test Coverage\n';
             try {
               const coverage = fs.readFileSync('coverage/coverage-summary.json', 'utf8');
               const data = JSON.parse(coverage);
-              const lines = data.total.lines.pct;
-              const statements = data.total.statements.pct;
-              
-              comment += `### 📊 Code Coverage\n`;
-              comment += `- Lines: ${lines}%\n`;
-              comment += `- Statements: ${statements}%\n\n`;
+              summary += `- Lines: ${data.total.lines.pct}%\n`;
+              summary += `- Statements: ${data.total.statements.pct}%\n`;
+              summary += `- Functions: ${data.total.functions.pct}%\n`;
+              summary += `- Branches: ${data.total.branches.pct}%\n\n`;
             } catch (e) {
-              comment += '⚠️ Coverage report not available\n\n';
+              summary += '⚠️ Coverage data not available\n\n';
             }
             
-            comment += '### ✅ All tests completed!\n';
-            comment += 'Check the Actions tab for detailed results.';
+            // Test status
+            summary += '## 🧪 Tests\n';
+            summary += '- Unit Tests: ${{ steps.unit-tests.outcome }}\n';
+            summary += '- E2E Tests: ${{ steps.e2e-tests.outcome }}\n\n';
+            
+            summary += '---\n';
+            summary += '💡 Check individual comments above for detailed AI code review and suggestions.\n';
+            summary += '📖 Review our [Code Review Guidelines](https://github.com/jcwa/guide/blob/main/CODE_REVIEW_GUIDE.md) for best practices.\n';
             
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: comment
+              body: summary
             });
