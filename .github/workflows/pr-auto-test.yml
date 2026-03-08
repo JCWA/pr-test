@@ -1,4 +1,4 @@
-name: PR Auto Review & Test
+name: PR 자동 리뷰 & 테스트
 
 on:
   pull_request:
@@ -9,7 +9,7 @@ on:
 
 jobs:
   ai-review-and-test:
-    name: AI Review & Test
+    name: AI 리뷰 & 테스트
     runs-on: ubuntu-latest
     
     permissions:
@@ -17,35 +17,35 @@ jobs:
       pull-requests: write
     
     steps:
-      - name: Checkout code
+      - name: 코드 체크아웃
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.ref }}
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
       
-      - name: Setup Node.js
+      - name: Node.js 설정
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'yarn'
       
-      - name: Install dependencies
+      - name: 의존성 설치
         run: yarn install --frozen-lockfile
       
       # 1. Lint & Build
-      - name: Lint code
+      - name: 코드 린트 검사
         id: lint
         run: yarn lint
         continue-on-error: true
       
-      - name: Build project
+      - name: 프로젝트 빌드
         id: build
         run: yarn build
         continue-on-error: true
       
-      # 2. AI Code Review
-      - name: AI Code Review
+      # 2. AI 코드 리뷰
+      - name: AI 코드 리뷰
         id: code-review
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -56,8 +56,8 @@ jobs:
           node scripts/ai-code-review.js
         continue-on-error: true
       
-      # 3. Generate test code
-      - name: Generate test code
+      # 3. 테스트 코드 생성
+      - name: 테스트 코드 생성
         id: generate-tests
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -65,60 +65,60 @@ jobs:
           node scripts/generate-tests.js
         continue-on-error: true
       
-      # 4. Run tests
-      - name: Run unit tests
+      # 4. 테스트 실행
+      - name: 단위 테스트 실행
         id: unit-tests
         run: yarn test --coverage
         continue-on-error: true
       
-      - name: Run E2E tests
+      - name: E2E 테스트 실행
         id: e2e-tests
         run: yarn test:e2e
         continue-on-error: true
       
-      # 5. Upload coverage
-      - name: Upload coverage reports
+      # 5. 커버리지 업로드
+      - name: 커버리지 리포트 업로드
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: coverage-report
           path: coverage/
       
-      # 6. Final summary comment
-      - name: Post summary to PR
+      # 6. 최종 요약 코멘트
+      - name: PR에 요약 게시
         uses: actions/github-script@v7
         if: always()
         with:
           script: |
             const fs = require('fs');
-            let summary = '# 🤖 Automated PR Review Summary\n\n';
+            let summary = '# 🤖 자동 PR 리뷰 요약\n\n';
             
-            // Build status
-            summary += '## 🏗️ Build & Lint\n';
-            summary += '- Lint: ${{ steps.lint.outcome }}\n';
-            summary += '- Build: ${{ steps.build.outcome }}\n\n';
+            // 빌드 상태
+            summary += '## 🏗️ 빌드 & 린트\n';
+            summary += '- 린트: ${{ steps.lint.outcome }}\n';
+            summary += '- 빌드: ${{ steps.build.outcome }}\n\n';
             
-            // Coverage
-            summary += '## 📊 Test Coverage\n';
+            // 커버리지
+            summary += '## 📊 테스트 커버리지\n';
             try {
               const coverage = fs.readFileSync('coverage/coverage-summary.json', 'utf8');
               const data = JSON.parse(coverage);
-              summary += `- Lines: ${data.total.lines.pct}%\n`;
-              summary += `- Statements: ${data.total.statements.pct}%\n`;
-              summary += `- Functions: ${data.total.functions.pct}%\n`;
-              summary += `- Branches: ${data.total.branches.pct}%\n\n`;
+              summary += `- 라인: ${data.total.lines.pct}%\n`;
+              summary += `- 구문: ${data.total.statements.pct}%\n`;
+              summary += `- 함수: ${data.total.functions.pct}%\n`;
+              summary += `- 분기: ${data.total.branches.pct}%\n\n`;
             } catch (e) {
-              summary += '⚠️ Coverage data not available\n\n';
+              summary += '⚠️ 커버리지 데이터를 사용할 수 없습니다\n\n';
             }
             
-            // Test status
-            summary += '## 🧪 Tests\n';
-            summary += '- Unit Tests: ${{ steps.unit-tests.outcome }}\n';
-            summary += '- E2E Tests: ${{ steps.e2e-tests.outcome }}\n\n';
+            // 테스트 상태
+            summary += '## 🧪 테스트\n';
+            summary += '- 단위 테스트: ${{ steps.unit-tests.outcome }}\n';
+            summary += '- E2E 테스트: ${{ steps.e2e-tests.outcome }}\n\n';
             
             summary += '---\n';
-            summary += '💡 Check individual comments above for detailed AI code review and suggestions.\n';
-            summary += '📖 Review our [Code Review Guidelines](https://github.com/jcwa/guide/blob/main/CODE_REVIEW_GUIDE.md) for best practices.\n';
+            summary += '💡 위의 개별 코멘트에서 상세한 AI 코드 리뷰와 제안사항을 확인하세요.\n';
+            summary += '📖 모범 사례는 [코드 리뷰 가이드라인](https://github.com/jcwa/guide/blob/main/CODE_REVIEW_GUIDE.md)을 참고하세요.\n';
             
             github.rest.issues.createComment({
               issue_number: context.issue.number,
